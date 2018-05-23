@@ -1,0 +1,60 @@
+- hosts: localhost
+  connection: local
+  gather_facts: False
+  tasks:
+    - name: Provision a set of instances
+      ec2:
+        aws_access_key: "XXXXXXX"
+        aws_secret_key: "XXXXXXX"
+        key_name: "key_name"
+        region: "eu-west-3"
+        group: "launch-wizard-2"
+        instance_type: "t2.micro"
+        image: "ami-0e55e373"
+        wait: true
+        count: 1
+      register: ec2
+   
+    - name: Add all instance public IPs to host group
+      add_host: hostname={{ item.public_ip }} groups=ec2hosts
+      with_items: "{{ ec2.instances }}"
+
+    - name: Wait for SSH to come up
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        delay: 0
+        timeout: 320
+        state: started
+      with_items: "{{ ec2.instances }}"
+
+
+- hosts: ec2hosts
+  name: configuration play
+  user: ubuntu
+  sudo: yes
+  gather_facts: true
+  tasks:
+  
+  - name: Install Postgres
+    apt:
+      name: "{{ item }}"
+      update_cache: yes
+    with_items:
+      - 'postgresql-9.5'
+      - 'python3-psycopg2'
+
+  - name: Create user
+    become: true
+    become_user: postgres
+    postgresql_user:
+      name: "{{ dbuser }}"
+      password: "{{ dbpassword }}"
+
+  - name: Create DB
+    become: true
+    become_user: postgres
+    postgresql_db:
+      name: "{{ dbname }}"
+      owner: "{{ dbuser }}"  
+
